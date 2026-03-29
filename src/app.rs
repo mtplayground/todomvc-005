@@ -179,6 +179,7 @@ pub fn App() -> impl IntoView {
     let delete_action = ServerAction::<DeleteTodo>::new();
     let toggle_all_action = ServerAction::<ToggleAll>::new();
     let update_action = ServerAction::<UpdateTodo>::new();
+    let clear_completed_action = ServerAction::<ClearCompleted>::new();
 
     // Refresh when any action completes
     Effect::new(move |_| {
@@ -199,6 +200,10 @@ pub fn App() -> impl IntoView {
     });
     Effect::new(move |_| {
         let _ = update_action.version().get();
+        set_refresh.update(|n| *n += 1);
+    });
+    Effect::new(move |_| {
+        let _ = clear_completed_action.version().get();
         set_refresh.update(|n| *n += 1);
     });
 
@@ -266,7 +271,7 @@ pub fn App() -> impl IntoView {
                                         {items_view}
                                     </ul>
                                 </section>
-                                <Footer todos=footer_todos filter=filter set_filter=set_filter />
+                                <Footer todos=footer_todos filter=filter set_filter=set_filter clear_completed_action=clear_completed_action />
                             </>
                         }.into_any()
                     }
@@ -394,8 +399,10 @@ fn Footer(
     todos: Vec<Todo>,
     filter: ReadSignal<String>,
     set_filter: WriteSignal<String>,
+    clear_completed_action: ServerAction<ClearCompleted>,
 ) -> impl IntoView {
     let active_count = todos.iter().filter(|t| !t.completed).count();
+    let has_completed = todos.iter().any(|t| t.completed);
     let item_text = if active_count == 1 { "item" } else { "items" };
 
     let filter_link = move |name: &'static str, label: &'static str| {
@@ -425,6 +432,16 @@ fn Footer(
                 {filter_link("active", "Active")}
                 {filter_link("completed", "Completed")}
             </ul>
+            <Show when=move || has_completed>
+                <button
+                    class="clear-completed"
+                    on:click=move |_| {
+                        clear_completed_action.dispatch(ClearCompleted {});
+                    }
+                >
+                    "Clear completed"
+                </button>
+            </Show>
         </footer>
     }
 }
