@@ -172,9 +172,28 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 pub fn App() -> impl IntoView {
     provide_meta_context();
 
-    let add_todo_action = ServerAction::<AddTodo>::new();
+    let (refresh, set_refresh) = signal(0u32);
+
+    let add_action = ServerAction::<AddTodo>::new();
+    let toggle_action = ServerAction::<ToggleTodo>::new();
+    let delete_action = ServerAction::<DeleteTodo>::new();
+
+    // Refresh when any action completes
+    Effect::new(move |_| {
+        let _ = add_action.version().get();
+        set_refresh.update(|n| *n += 1);
+    });
+    Effect::new(move |_| {
+        let _ = toggle_action.version().get();
+        set_refresh.update(|n| *n += 1);
+    });
+    Effect::new(move |_| {
+        let _ = delete_action.version().get();
+        set_refresh.update(|n| *n += 1);
+    });
+
     let todos = Resource::new(
-        move || add_todo_action.version().get(),
+        move || refresh.get(),
         |_| async move { get_todos().await.unwrap_or_default() },
     );
 
@@ -183,7 +202,7 @@ pub fn App() -> impl IntoView {
         <section class="todoapp">
             <header class="header">
                 <h1>"todos"</h1>
-                <TodoInput add_action=add_todo_action />
+                <TodoInput add_action=add_action />
             </header>
             <Suspense fallback=|| view! { <></> }>
                 {move || {
@@ -195,12 +214,14 @@ pub fn App() -> impl IntoView {
                                 <ul class="todo-list">
                                     {todo_list.iter().map(|todo| {
                                         let todo = todo.clone();
+                                        let todo_id = todo.id;
                                         view! {
-                                            <li class={if todo.completed { "completed" } else { "" }}>
-                                                <div class="view">
-                                                    <label>{todo.title.clone()}</label>
-                                                </div>
-                                            </li>
+                                            <TodoItem
+                                                todo=todo
+                                                on_toggle=move || { toggle_action.dispatch(ToggleTodo { id: todo_id }); }
+                                                on_delete=move || { delete_action.dispatch(DeleteTodo { id: todo_id }); }
+                                                on_update=move |_title| {}
+                                            />
                                         }
                                     }).collect_view()}
                                 </ul>
@@ -210,6 +231,32 @@ pub fn App() -> impl IntoView {
                 }}
             </Suspense>
         </section>
+    }
+}
+
+#[component]
+fn TodoItem(
+    todo: Todo,
+    on_toggle: impl Fn() + 'static,
+    on_delete: impl Fn() + 'static,
+    on_update: impl Fn(String) + 'static,
+) -> impl IntoView {
+    let completed = todo.completed;
+    let title = todo.title.clone();
+
+    view! {
+        <li class={if completed { "completed" } else { "" }}>
+            <div class="view">
+                <input
+                    class="toggle"
+                    type="checkbox"
+                    prop:checked=completed
+                    on:change=move |_| on_toggle()
+                />
+                <label on:dblclick=move |_| { let _ = &on_update; }>{title.clone()}</label>
+                <button class="destroy" on:click=move |_| on_delete()></button>
+            </div>
+        </li>
     }
 }
 
