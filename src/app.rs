@@ -337,6 +337,7 @@ fn TodoItem(
                         <input
                             class="edit"
                             prop:value=edit_value
+                            autofocus
                             on:input=move |ev| set_edit_value.set(event_target_value(&ev))
                             on:keydown=move |ev: leptos::web_sys::KeyboardEvent| {
                                 match ev.key().as_str() {
@@ -354,10 +355,12 @@ fn TodoItem(
                                 }
                             }
                             on:blur=move |_| {
-                                let val = edit_value.get();
-                                let val = val.trim().to_string();
-                                on_update_bl(val);
-                                set_editing.set(false);
+                                if editing.get() {
+                                    let val = edit_value.get();
+                                    let val = val.trim().to_string();
+                                    on_update_bl(val);
+                                    set_editing.set(false);
+                                }
                             }
                         />
                     }.into_any()
