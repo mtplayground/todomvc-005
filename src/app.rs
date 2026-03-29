@@ -177,6 +177,7 @@ pub fn App() -> impl IntoView {
     let add_action = ServerAction::<AddTodo>::new();
     let toggle_action = ServerAction::<ToggleTodo>::new();
     let delete_action = ServerAction::<DeleteTodo>::new();
+    let toggle_all_action = ServerAction::<ToggleAll>::new();
 
     // Refresh when any action completes
     Effect::new(move |_| {
@@ -189,6 +190,10 @@ pub fn App() -> impl IntoView {
     });
     Effect::new(move |_| {
         let _ = delete_action.version().get();
+        set_refresh.update(|n| *n += 1);
+    });
+    Effect::new(move |_| {
+        let _ = toggle_all_action.version().get();
         set_refresh.update(|n| *n += 1);
     });
 
@@ -213,6 +218,7 @@ pub fn App() -> impl IntoView {
                         }.into_any()
                     } else {
                         let footer_todos = todo_list.clone();
+                        let all_completed = !todo_list.is_empty() && todo_list.iter().all(|t| t.completed);
                         let items_view: Vec<_> = todo_list.iter().map(|todo| {
                             let todo = todo.clone();
                             let todo_id = todo.id;
@@ -228,6 +234,16 @@ pub fn App() -> impl IntoView {
                         view! {
                             <>
                                 <section class="main">
+                                    <input
+                                        id="toggle-all"
+                                        class="toggle-all"
+                                        type="checkbox"
+                                        prop:checked=all_completed
+                                        on:change=move |_| {
+                                            toggle_all_action.dispatch(ToggleAll { completed: !all_completed });
+                                        }
+                                    />
+                                    <label for="toggle-all">"Mark all as complete"</label>
                                     <ul class="todo-list">
                                         {items_view}
                                     </ul>
