@@ -1,0 +1,50 @@
+[package]
+name = "todomvc"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "todomvc"
+path = "src/main.rs"
+
+[dependencies]
+leptos = { version = "0.6", features = ["nightly"] }
+leptos_axum = { version = "0.6", optional = true }
+leptos_meta = { version = "0.6" }
+leptos_router = { version = "0.6" }
+axum = { version = "0.7", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+tower = { version = "0.4", optional = true }
+tower-http = { version = "0.5", features = ["fs"], optional = true }
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-rustls", "migrate"], optional = true }
+serde = { version = "1", features = ["derive"] }
+thiserror = "1"
+http = "1"
+wasm-bindgen = { version = "0.2", optional = true }
+
+[features]
+hydrate = ["leptos/hydrate", "dep:wasm-bindgen"]
+ssr = [
+  "dep:axum",
+  "dep:tokio",
+  "dep:tower",
+  "dep:tower-http",
+  "dep:leptos_axum",
+  "dep:sqlx",
+  "leptos/ssr",
+  "leptos_meta/ssr",
+  "leptos_router/ssr",
+]
+
+[package.metadata.leptos]
+output-name = "todomvc"
+site-root = "target/site"
+site-pkg-dir = "pkg"
+style-file = "style/main.css"
+bin-features = ["ssr"]
+lib-features = ["hydrate"]
+bin-default-features = false
+lib-default-features = false
