@@ -207,26 +207,34 @@ pub fn App() -> impl IntoView {
             <Suspense fallback=|| view! { <></> }>
                 {move || {
                     let todo_list = todos.get().unwrap_or_default();
-                    let has_todos = !todo_list.is_empty();
-                    view! {
-                        <Show when=move || has_todos>
-                            <section class="main">
-                                <ul class="todo-list">
-                                    {todo_list.iter().map(|todo| {
-                                        let todo = todo.clone();
-                                        let todo_id = todo.id;
-                                        view! {
-                                            <TodoItem
-                                                todo=todo
-                                                on_toggle=move || { toggle_action.dispatch(ToggleTodo { id: todo_id }); }
-                                                on_delete=move || { delete_action.dispatch(DeleteTodo { id: todo_id }); }
-                                                on_update=move |_title| {}
-                                            />
-                                        }
-                                    }).collect_view()}
-                                </ul>
-                            </section>
-                        </Show>
+                    if todo_list.is_empty() {
+                        view! {
+                            <></>
+                        }.into_any()
+                    } else {
+                        let footer_todos = todo_list.clone();
+                        let items_view: Vec<_> = todo_list.iter().map(|todo| {
+                            let todo = todo.clone();
+                            let todo_id = todo.id;
+                            view! {
+                                <TodoItem
+                                    todo=todo
+                                    on_toggle=move || { toggle_action.dispatch(ToggleTodo { id: todo_id }); }
+                                    on_delete=move || { delete_action.dispatch(DeleteTodo { id: todo_id }); }
+                                    on_update=move |_title| {}
+                                />
+                            }
+                        }).collect();
+                        view! {
+                            <>
+                                <section class="main">
+                                    <ul class="todo-list">
+                                        {items_view}
+                                    </ul>
+                                </section>
+                                <Footer todos=footer_todos />
+                            </>
+                        }.into_any()
                     }
                 }}
             </Suspense>
@@ -282,5 +290,20 @@ fn TodoInput(add_action: ServerAction<AddTodo>) -> impl IntoView {
             }
             autofocus
         />
+    }
+}
+
+#[component]
+fn Footer(todos: Vec<Todo>) -> impl IntoView {
+    let active_count = todos.iter().filter(|t| !t.completed).count();
+    let item_text = if active_count == 1 { "item" } else { "items" };
+
+    view! {
+        <footer class="footer">
+            <span class="todo-count">
+                <strong>{active_count}</strong>
+                {format!(" {} left", item_text)}
+            </span>
+        </footer>
     }
 }
