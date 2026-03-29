@@ -1,5 +1,14 @@
 use leptos::prelude::*;
 use leptos_meta::*;
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct Todo {
+    pub id: i64,
+    pub title: String,
+    pub completed: bool,
+    pub display_order: i64,
+}
 
 pub fn shell(options: LeptosOptions) -> impl IntoView {
     view! {
@@ -29,7 +38,7 @@ pub fn App() -> impl IntoView {
             <header class="header">
                 <h1>"todos"</h1>
             </header>
-            <p>"Hello World"</p>
+            <p>"Hello World - Database Connected"</p>
         </section>
     }
 }
