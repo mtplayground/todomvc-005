@@ -178,6 +178,7 @@ pub fn App() -> impl IntoView {
     let toggle_action = ServerAction::<ToggleTodo>::new();
     let delete_action = ServerAction::<DeleteTodo>::new();
     let toggle_all_action = ServerAction::<ToggleAll>::new();
+    let update_action = ServerAction::<UpdateTodo>::new();
 
     // Refresh when any action completes
     Effect::new(move |_| {
@@ -194,6 +195,10 @@ pub fn App() -> impl IntoView {
     });
     Effect::new(move |_| {
         let _ = toggle_all_action.version().get();
+        set_refresh.update(|n| *n += 1);
+    });
+    Effect::new(move |_| {
+        let _ = update_action.version().get();
         set_refresh.update(|n| *n += 1);
     });
 
@@ -222,12 +227,15 @@ pub fn App() -> impl IntoView {
                         let items_view: Vec<_> = todo_list.iter().map(|todo| {
                             let todo = todo.clone();
                             let todo_id = todo.id;
+                            let toggle_action2 = toggle_action;
+                            let delete_action2 = delete_action;
+                            let update_action2 = update_action;
                             view! {
                                 <TodoItem
                                     todo=todo
-                                    on_toggle=move || { toggle_action.dispatch(ToggleTodo { id: todo_id }); }
-                                    on_delete=move || { delete_action.dispatch(DeleteTodo { id: todo_id }); }
-                                    on_update=move |_title| {}
+                                    on_toggle=move || { toggle_action2.dispatch(ToggleTodo { id: todo_id }); }
+                                    on_delete=move || { delete_action2.dispatch(DeleteTodo { id: todo_id }); }
+                                    on_update=move |title| { update_action2.dispatch(UpdateTodo { id: todo_id, title }); }
                                 />
                             }
                         }).collect();
@@ -261,15 +269,34 @@ pub fn App() -> impl IntoView {
 #[component]
 fn TodoItem(
     todo: Todo,
-    on_toggle: impl Fn() + 'static,
-    on_delete: impl Fn() + 'static,
-    on_update: impl Fn(String) + 'static,
+    on_toggle: impl Fn() + 'static + Send + Sync,
+    on_delete: impl Fn() + 'static + Send + Sync,
+    on_update: impl Fn(String) + 'static + Send + Sync,
 ) -> impl IntoView {
     let completed = todo.completed;
     let title = todo.title.clone();
+    let todo_title_for_edit = todo.title.clone();
+    let todo_title_for_escape = todo.title.clone();
+
+    let (editing, set_editing) = signal(false);
+    let (edit_value, set_edit_value) = signal(todo.title.clone());
+
+    use std::sync::Arc;
+    let on_update = Arc::new(on_update);
+    let on_update_blur = on_update.clone();
+    let on_update_keydown = on_update.clone();
+
+    let li_class = move || {
+        match (completed, editing.get()) {
+            (true, true) => "completed editing",
+            (true, false) => "completed",
+            (false, true) => "editing",
+            (false, false) => "",
+        }
+    };
 
     view! {
-        <li class={if completed { "completed" } else { "" }}>
+        <li class=li_class>
             <div class="view">
                 <input
                     class="toggle"
@@ -277,9 +304,52 @@ fn TodoItem(
                     prop:checked=completed
                     on:change=move |_| on_toggle()
                 />
-                <label on:dblclick=move |_| { let _ = &on_update; }>{title.clone()}</label>
+                <label on:dblclick={
+                    let todo_title_for_edit = todo_title_for_edit.clone();
+                    move |_| {
+                        set_edit_value.set(todo_title_for_edit.clone());
+                        set_editing.set(true);
+                    }
+                }>{title.clone()}</label>
                 <button class="destroy" on:click=move |_| on_delete()></button>
             </div>
+            {move || {
+                if editing.get() {
+                    let on_update_kd = on_update_keydown.clone();
+                    let on_update_bl = on_update_blur.clone();
+                    let escape_title = todo_title_for_escape.clone();
+                    view! {
+                        <input
+                            class="edit"
+                            prop:value=edit_value
+                            on:input=move |ev| set_edit_value.set(event_target_value(&ev))
+                            on:keydown=move |ev: leptos::web_sys::KeyboardEvent| {
+                                match ev.key().as_str() {
+                                    "Enter" => {
+                                        let val = edit_value.get();
+                                        let val = val.trim().to_string();
+                                        on_update_kd(val);
+                                        set_editing.set(false);
+                                    }
+                                    "Escape" => {
+                                        set_edit_value.set(escape_title.clone());
+                                        set_editing.set(false);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                            on:blur=move |_| {
+                                let val = edit_value.get();
+                                let val = val.trim().to_string();
+                                on_update_bl(val);
+                                set_editing.set(false);
+                            }
+                        />
+                    }.into_any()
+                } else {
+                    view! { <></> }.into_any()
+                }
+            }}
         </li>
     }
 }
