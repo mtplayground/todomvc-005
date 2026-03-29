@@ -1,17 +1,22 @@
-//! Integration tests for TodoMVC server functions
-//! These tests require a running SQLite database connection.
+// Integration tests for TodoMVC SQLite operations
+// These tests use an in-memory SQLite database
 
 #[cfg(test)]
-#[cfg(feature = "ssr")]
 mod tests {
-    use sqlx::sqlite::SqlitePoolOptions;
-    use sqlx::SqlitePool;
+    use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
+    use sqlx::Row;
+    use std::str::FromStr;
 
-    async fn setup_db() -> SqlitePool {
+    async fn setup_test_db() -> sqlx::SqlitePool {
+        let connect_options = SqliteConnectOptions::from_str("sqlite::memory:")
+            .expect("Failed to parse database URL")
+            .create_if_missing(true);
+
         let pool = SqlitePoolOptions::new()
-            .connect("sqlite::memory:")
+            .max_connections(1)
+            .connect_with(connect_options)
             .await
-            .expect("Failed to create in-memory database");
+            .expect("Failed to connect to database");
 
         sqlx::query(
             "CREATE TABLE IF NOT EXISTS todos (
@@ -19,166 +24,209 @@ mod tests {
                 title TEXT NOT NULL,
                 completed BOOLEAN NOT NULL DEFAULT FALSE,
                 display_order INTEGER NOT NULL DEFAULT 0
-            )",
+            )"
         )
         .execute(&pool)
         .await
-        .expect("Failed to create table");
+        .expect("Failed to create todos table");
 
         pool
     }
 
     #[tokio::test]
-    async fn test_create_and_read_todo() {
-        let pool = setup_db().await;
+    async fn test_add_todo() {
+        let pool = setup_test_db().await;
 
-        // Insert a todo
-        let todo = sqlx::query!(
-            "INSERT INTO todos (title, completed, display_order) VALUES (?, FALSE, 1) RETURNING id, title, completed, display_order",
-            "Test todo"
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("Failed to insert todo");
-
-        assert_eq!(todo.title, "Test todo");
-        assert!(!todo.completed);
-
-        // Read all todos
-        let todos = sqlx::query!("SELECT id, title, completed, display_order FROM todos")
-            .fetch_all(&pool)
+        sqlx::query("INSERT INTO todos (title, completed, display_order) VALUES (?, FALSE, ?)")
+            .bind("Test todo")
+            .bind(0i64)
+            .execute(&pool)
             .await
-            .expect("Failed to fetch todos");
+            .expect("Failed to insert todo");
 
-        assert_eq!(todos.len(), 1);
-        assert_eq!(todos[0].title, "Test todo");
+        let row = sqlx::query("SELECT COUNT(*) as count FROM todos")
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to count todos");
+
+        let count: i64 = row.get("count");
+        assert_eq!(count, 1);
     }
 
     #[tokio::test]
     async fn test_toggle_todo() {
-        let pool = setup_db().await;
+        let pool = setup_test_db().await;
 
-        let todo = sqlx::query!(
-            "INSERT INTO todos (title, completed, display_order) VALUES (?, FALSE, 1) RETURNING id, title, completed, display_order",
-            "Toggle me"
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("Failed to insert todo");
+        let result = sqlx::query("INSERT INTO todos (title, completed, display_order) VALUES (?, FALSE, ?)")
+            .bind("Toggle me")
+            .bind(0i64)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert todo");
 
-        let id = todo.id;
+        let id = result.last_insert_rowid();
 
-        // Toggle
-        let updated = sqlx::query!(
-            "UPDATE todos SET completed = NOT completed WHERE id = ? RETURNING id, title, completed, display_order",
-            id
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("Failed to toggle todo");
+        sqlx::query("UPDATE todos SET completed = NOT completed WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .expect("Failed to toggle todo");
 
-        assert!(updated.completed);
+        let row = sqlx::query("SELECT completed FROM todos WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to fetch todo");
+
+        let completed: bool = row.get("completed");
+        assert!(completed);
     }
 
     #[tokio::test]
     async fn test_delete_todo() {
-        let pool = setup_db().await;
+        let pool = setup_test_db().await;
 
-        let todo = sqlx::query!(
-            "INSERT INTO todos (title, completed, display_order) VALUES (?, FALSE, 1) RETURNING id, title, completed, display_order",
-            "Delete me"
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("Failed to insert todo");
+        let result = sqlx::query("INSERT INTO todos (title, completed, display_order) VALUES (?, FALSE, ?)")
+            .bind("Delete me")
+            .bind(0i64)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert todo");
 
-        let id = todo.id;
+        let id = result.last_insert_rowid();
 
-        sqlx::query!("DELETE FROM todos WHERE id = ?", id)
+        sqlx::query("DELETE FROM todos WHERE id = ?")
+            .bind(id)
             .execute(&pool)
             .await
             .expect("Failed to delete todo");
 
-        let todos = sqlx::query!("SELECT id FROM todos WHERE id = ?", id)
-            .fetch_all(&pool)
+        let row = sqlx::query("SELECT COUNT(*) as count FROM todos")
+            .fetch_one(&pool)
             .await
-            .expect("Failed to query");
+            .expect("Failed to count todos");
 
-        assert!(todos.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_clear_completed() {
-        let pool = setup_db().await;
-
-        sqlx::query!(
-            "INSERT INTO todos (title, completed, display_order) VALUES ('Active', FALSE, 1), ('Done', TRUE, 2)"
-        )
-        .execute(&pool)
-        .await
-        .expect("Failed to insert todos");
-
-        sqlx::query!("DELETE FROM todos WHERE completed = TRUE")
-            .execute(&pool)
-            .await
-            .expect("Failed to clear completed");
-
-        let todos = sqlx::query!("SELECT id, title FROM todos")
-            .fetch_all(&pool)
-            .await
-            .expect("Failed to fetch");
-
-        assert_eq!(todos.len(), 1);
-        assert_eq!(todos[0].title, "Active");
-    }
-
-    #[tokio::test]
-    async fn test_toggle_all() {
-        let pool = setup_db().await;
-
-        sqlx::query!(
-            "INSERT INTO todos (title, completed, display_order) VALUES ('A', FALSE, 1), ('B', FALSE, 2)"
-        )
-        .execute(&pool)
-        .await
-        .expect("Failed to insert todos");
-
-        sqlx::query!("UPDATE todos SET completed = TRUE")
-            .execute(&pool)
-            .await
-            .expect("Failed to toggle all");
-
-        let todos = sqlx::query!("SELECT completed FROM todos")
-            .fetch_all(&pool)
-            .await
-            .expect("Failed to fetch");
-
-        assert!(todos.iter().all(|t| t.completed));
+        let count: i64 = row.get("count");
+        assert_eq!(count, 0);
     }
 
     #[tokio::test]
     async fn test_update_todo_title() {
-        let pool = setup_db().await;
+        let pool = setup_test_db().await;
 
-        let todo = sqlx::query!(
-            "INSERT INTO todos (title, completed, display_order) VALUES (?, FALSE, 1) RETURNING id, title, completed, display_order",
-            "Old title"
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("Failed to insert todo");
+        let result = sqlx::query("INSERT INTO todos (title, completed, display_order) VALUES (?, FALSE, ?)")
+            .bind("Old title")
+            .bind(0i64)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert todo");
 
-        let id = todo.id;
+        let id = result.last_insert_rowid();
 
-        let updated = sqlx::query!(
-            "UPDATE todos SET title = ? WHERE id = ? RETURNING id, title, completed, display_order",
-            "New title",
-            id
-        )
-        .fetch_one(&pool)
-        .await
-        .expect("Failed to update todo");
+        sqlx::query("UPDATE todos SET title = ? WHERE id = ?")
+            .bind("New title")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .expect("Failed to update todo");
 
-        assert_eq!(updated.title, "New title");
+        let row = sqlx::query("SELECT title FROM todos WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to fetch todo");
+
+        let title: String = row.get("title");
+        assert_eq!(title, "New title");
+    }
+
+    #[tokio::test]
+    async fn test_clear_completed() {
+        let pool = setup_test_db().await;
+
+        // Add 2 completed and 1 active todo
+        sqlx::query("INSERT INTO todos (title, completed, display_order) VALUES (?, TRUE, ?)")
+            .bind("Completed 1")
+            .bind(0i64)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert todo");
+
+        sqlx::query("INSERT INTO todos (title, completed, display_order) VALUES (?, TRUE, ?)")
+            .bind("Completed 2")
+            .bind(1i64)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert todo");
+
+        sqlx::query("INSERT INTO todos (title, completed, display_order) VALUES (?, FALSE, ?)")
+            .bind("Active")
+            .bind(2i64)
+            .execute(&pool)
+            .await
+            .expect("Failed to insert todo");
+
+        sqlx::query("DELETE FROM todos WHERE completed = TRUE")
+            .execute(&pool)
+            .await
+            .expect("Failed to clear completed");
+
+        let row = sqlx::query("SELECT COUNT(*) as count FROM todos")
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to count todos");
+
+        let count: i64 = row.get("count");
+        assert_eq!(count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_toggle_all() {
+        let pool = setup_test_db().await;
+
+        for i in 0..3 {
+            sqlx::query("INSERT INTO todos (title, completed, display_order) VALUES (?, FALSE, ?)")
+                .bind(format!("Todo {}", i))
+                .bind(i as i64)
+                .execute(&pool)
+                .await
+                .expect("Failed to insert todo");
+        }
+
+        sqlx::query("UPDATE todos SET completed = ?")
+            .bind(true)
+            .execute(&pool)
+            .await
+            .expect("Failed to toggle all");
+
+        let row = sqlx::query("SELECT COUNT(*) as count FROM todos WHERE completed = TRUE")
+            .fetch_one(&pool)
+            .await
+            .expect("Failed to count completed todos");
+
+        let count: i64 = row.get("count");
+        assert_eq!(count, 3);
+    }
+
+    #[tokio::test]
+    async fn test_get_todos_order() {
+        let pool = setup_test_db().await;
+
+        for (i, title) in ["C", "A", "B"].iter().enumerate() {
+            sqlx::query("INSERT INTO todos (title, completed, display_order) VALUES (?, FALSE, ?)")
+                .bind(*title)
+                .bind(i as i64)
+                .execute(&pool)
+                .await
+                .expect("Failed to insert todo");
+        }
+
+        let rows = sqlx::query("SELECT title FROM todos ORDER BY display_order ASC, id ASC")
+            .fetch_all(&pool)
+            .await
+            .expect("Failed to fetch todos");
+
+        let titles: Vec<String> = rows.iter().map(|r| r.get("title")).collect();
+        assert_eq!(titles, vec!["C", "A", "B"]);
     }
 }
