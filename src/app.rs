@@ -202,6 +202,8 @@ pub fn App() -> impl IntoView {
         set_refresh.update(|n| *n += 1);
     });
 
+    let (filter, set_filter) = signal("all".to_string());
+
     let todos = Resource::new(
         move || refresh.get(),
         |_| async move { get_todos().await.unwrap_or_default() },
@@ -217,6 +219,14 @@ pub fn App() -> impl IntoView {
             <Suspense fallback=|| view! { <></> }>
                 {move || {
                     let todo_list = todos.get().unwrap_or_default();
+                    let current_filter = filter.get();
+                    let filtered_list: Vec<Todo> = todo_list.iter().filter(|t| {
+                        match current_filter.as_str() {
+                            "active" => !t.completed,
+                            "completed" => t.completed,
+                            _ => true,
+                        }
+                    }).cloned().collect();
                     if todo_list.is_empty() {
                         view! {
                             <></>
@@ -224,7 +234,7 @@ pub fn App() -> impl IntoView {
                     } else {
                         let footer_todos = todo_list.clone();
                         let all_completed = !todo_list.is_empty() && todo_list.iter().all(|t| t.completed);
-                        let items_view: Vec<_> = todo_list.iter().map(|todo| {
+                        let items_view: Vec<_> = filtered_list.iter().map(|todo| {
                             let todo = todo.clone();
                             let todo_id = todo.id;
                             let toggle_action2 = toggle_action;
@@ -256,7 +266,7 @@ pub fn App() -> impl IntoView {
                                         {items_view}
                                     </ul>
                                 </section>
-                                <Footer todos=footer_todos />
+                                <Footer todos=footer_todos filter=filter set_filter=set_filter />
                             </>
                         }.into_any()
                     }
@@ -380,9 +390,29 @@ fn TodoInput(add_action: ServerAction<AddTodo>) -> impl IntoView {
 }
 
 #[component]
-fn Footer(todos: Vec<Todo>) -> impl IntoView {
+fn Footer(
+    todos: Vec<Todo>,
+    filter: ReadSignal<String>,
+    set_filter: WriteSignal<String>,
+) -> impl IntoView {
     let active_count = todos.iter().filter(|t| !t.completed).count();
     let item_text = if active_count == 1 { "item" } else { "items" };
+
+    let filter_link = move |name: &'static str, label: &'static str| {
+        let is_selected = move || filter.get() == name;
+        let set_f = set_filter;
+        view! {
+            <li>
+                <a
+                    class=move || if is_selected() { "selected" } else { "" }
+                    href={format!("#{}", name)}
+                    on:click=move |_| set_f.set(name.to_string())
+                >
+                    {label}
+                </a>
+            </li>
+        }
+    };
 
     view! {
         <footer class="footer">
@@ -390,6 +420,11 @@ fn Footer(todos: Vec<Todo>) -> impl IntoView {
                 <strong>{active_count}</strong>
                 {format!(" {} left", item_text)}
             </span>
+            <ul class="filters">
+                {filter_link("all", "All")}
+                {filter_link("active", "Active")}
+                {filter_link("completed", "Completed")}
+            </ul>
         </footer>
     }
 }
