@@ -4,5 +4,5 @@ pub mod app;
 #[wasm_bindgen::prelude::wasm_bindgen]
 pub fn hydrate() {
     use app::App;
-    leptos::mount_to_body(App);
+    leptos::mount::hydrate_body(App);
 }
