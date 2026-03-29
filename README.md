@@ -1,76 +1,91 @@
-# TodoMVC - Leptos + Axum + SQLite
+# TodoMVC - Rust/Leptos/Axum
 
-A full-stack TodoMVC application built with Leptos (full-stack Rust web framework), Axum HTTP server, and SQLite via SQLx.
+A full-stack TodoMVC implementation built with Rust using:
+- **Leptos 0.7** - Full-stack reactive web framework with SSR
+- **Axum 0.7** - Fast async web server
+- **SQLx 0.8** - Async SQLite database with migrations
+- **Tokio** - Async runtime
 
 ## Features
 
 - Create, read, update, delete todos
-- Toggle individual todos or all at once
-- Filter by All / Active / Completed
+- Toggle individual todos complete/incomplete
+- Toggle all todos at once
+- Inline editing with double-click
+- Filter todos: All / Active / Completed
 - Clear all completed todos
-- Inline editing (double-click)
-- Persistent storage via SQLite
-- Server-side rendering with client-side hydration
+- Persistent storage with SQLite
+- Server-side rendering (SSR) with optional client-side hydration
 
-## Prerequisites
+## Requirements
 
-- Rust nightly (see `rust-toolchain.toml`)
-- `cargo-leptos` CLI tool
-- `wasm32-unknown-unknown` target
+- Rust (nightly toolchain configured in rust-toolchain.toml or via rustup)
+- `cargo`
 
-## Setup
-
-Install cargo-leptos:
+## Build & Run
 
 ```bash
-cargo install cargo-leptos
+# Set the database URL for SQLx compile-time checks
+export DATABASE_URL=sqlite:todos.db
+touch todos.db
+
+# Build the server binary
+cargo build --features ssr --release
+
+# Run the server
+./target/release/todomvc
 ```
 
-## Build
-
-```bash
-cargo leptos build --release
-```
-
-Or for development:
-
-```bash
-cargo leptos watch
-```
-
-## Run
-
-```bash
-DATABASE_URL=sqlite:todos.db ./target/release/todomvc
-```
-
-The server listens on `0.0.0.0:8080` by default.
-
-## Environment Variables
-
-- `DATABASE_URL` - SQLite connection string (default: `sqlite:todos.db`)
+The server will start on `http://0.0.0.0:8080`.
 
 ## Development
 
-The app uses:
+```bash
+export DATABASE_URL=sqlite:todos.db
+touch todos.db
 
-- `leptos` 0.6 for reactive UI components
-- `leptos_axum` for SSR integration
-- `axum` 0.7 as the HTTP server
-- `sqlx` 0.7 with SQLite for persistence
-- `leptos_router` for client-side routing
+# Development build
+cargo build --features ssr
 
-## Project Structure
+# Run tests
+cargo test --features ssr
+```
+
+## Database
+
+SQLite database is created automatically on first run. Migrations are applied automatically at startup.
+
+Migration: `migrations/0001_create_todos.sql` - Creates the `todos` table with:
+- `id` - Primary key (autoincrement)
+- `title` - Todo text
+- `completed` - Boolean completion status
+- `display_order` - Order for display
+
+## Architecture
 
 ```
 src/
-  main.rs    - Axum server setup, database pool init
-  lib.rs     - WASM hydration entry point
-  app.rs     - All UI components and server functions
-style/
-  main.css   - TodoMVC CSS styles
+  main.rs    - Axum server setup, database pool, route configuration
+  lib.rs     - Library entry point, hydrate function for WASM
+  app.rs     - All Leptos components and server functions
+
 migrations/
   0001_create_todos.sql - Database schema
+
 tests/
-  integration.rs - Integration tests
+  integration.rs - SQLite integration tests
+
+style/
+  main.scss  - TodoMVC CSS styles
 ```
+
+## Server Functions
+
+All data operations are implemented as Leptos server functions:
+- `get_todos` - Fetch all todos ordered by display_order
+- `add_todo` - Create a new todo with auto-incrementing order
+- `update_todo` - Update todo title (deletes if empty)
+- `delete_todo` - Remove a todo by ID
+- `toggle_todo` - Toggle completion status
+- `toggle_all` - Set all todos to a given completion state
+- `clear_completed` - Delete all completed todos
