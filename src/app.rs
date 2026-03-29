@@ -171,12 +171,69 @@ pub fn shell(options: LeptosOptions) -> impl IntoView {
 #[component]
 pub fn App() -> impl IntoView {
     provide_meta_context();
+
+    let add_todo_action = ServerAction::<AddTodo>::new();
+    let todos = Resource::new(
+        move || add_todo_action.version().get(),
+        |_| async move { get_todos().await.unwrap_or_default() },
+    );
+
     view! {
         <Title text="TodoMVC"/>
         <section class="todoapp">
             <header class="header">
                 <h1>"todos"</h1>
+                <TodoInput add_action=add_todo_action />
             </header>
+            <Suspense fallback=|| view! { <></> }>
+                {move || {
+                    let todo_list = todos.get().unwrap_or_default();
+                    let has_todos = !todo_list.is_empty();
+                    view! {
+                        <Show when=move || has_todos>
+                            <section class="main">
+                                <ul class="todo-list">
+                                    {todo_list.iter().map(|todo| {
+                                        let todo = todo.clone();
+                                        view! {
+                                            <li class={if todo.completed { "completed" } else { "" }}>
+                                                <div class="view">
+                                                    <label>{todo.title.clone()}</label>
+                                                </div>
+                                            </li>
+                                        }
+                                    }).collect_view()}
+                                </ul>
+                            </section>
+                        </Show>
+                    }
+                }}
+            </Suspense>
         </section>
+    }
+}
+
+#[component]
+fn TodoInput(add_action: ServerAction<AddTodo>) -> impl IntoView {
+    let (input_value, set_input_value) = signal(String::new());
+
+    view! {
+        <input
+            class="new-todo"
+            placeholder="What needs to be done?"
+            prop:value=input_value
+            on:input=move |ev| set_input_value.set(event_target_value(&ev))
+            on:keydown=move |ev| {
+                if ev.key() == "Enter" {
+                    let val = input_value.get();
+                    let val = val.trim().to_string();
+                    if !val.is_empty() {
+                        add_action.dispatch(AddTodo { title: val });
+                        set_input_value.set(String::new());
+                    }
+                }
+            }
+            autofocus
+        />
     }
 }
